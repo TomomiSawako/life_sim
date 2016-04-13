@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>life_sim</title>
+		<meta name="author" content="Joe Wang">
+		<style>
+			* {
+				padding: 0;
+				margin: 0;
+			}
+			canvas {
+				position: absolute;
+				left: 0;
+				top: 0;
+			}
+			body {
+				background: black;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="terrain" width="1400" height="800" style=""></canvas>
+		<canvas id="cell" width="1400" height="800" style=""></canvas>
+		<script type="text/javascript">
+			var bounds = [1400,800];
+			var terrainCanvas = document.getElementById("terrain");
+			var terrainContext = terrainCanvas.getContext("2d");
+			var cellCanvas = document.getElementById("cell");
+			var cellContext = cellCanvas.getContext("2d");
+			var imageData = terrainContext.getImageData(0, 0, terrainCanvas.width, terrainCanvas.height);
+			var points = [], foods = [], cells = [];
+
+			var pointColor = {
+				"Spawn" : [125,255,150,0],
+				"Food" : [0,0,255,255],
+				"None" : [0,0,0,0],
+			}
+
+			function genSpawnPoints(){
+				var maxPoint = 100,
+					rndX = 0, rndY = 0,
+					minDistance = 30,
+					retryLimit = 100,
+					retryTime = 0;
+				mainLoop:
+				// Generate spawn points.
+				while ( points.length < maxPoint) {
+					if ( retryTime >= retryLimit ) {
+						retryTime = 0;
+						break;
+					}
+					// Random coordinate.
+					rndX = parseInt(getRandomArbitrary(0, terrainCanvas.width));
+					rndY = parseInt(getRandomArbitrary(0, terrainCanvas.height));
+					if ( !checkBounds(rndX,rndY) ) continue mainLoop;
+					if ( points.length == 0 ) {
+						points.push([rndX, rndY]);
+					}
+					// Do not too close.
+					for ( var key in points ) {
+						var point = points[key], dist = parseInt(pointDistance(rndX,rndY,point[0],point[1]));
+						if ( dist < minDistance ) {
+							retryTime ++;
+							continue mainLoop;
+						}
+					}
+					retryTime = 0;
+					points.push([rndX, rndY]);
+				}
+			};
+
+			function genFood(){
+				var radius = 10,
+					minDistance = 2,
+					rndPoint = [],
+					key = null,
+					point = [],
+					retryLimit = 10,
+					retryTime = 0;
+				for ( key in points ) {
+					point = points[key];
+					// Generate food!
+					findLoop:
+					while ( true ) {
+						if ( retryTime >= retryLimit ) {
+							retryTime = 0;
+							break;
+						}
+						rndPoint = randomCirclePoint(point[0], point[1], radius);
+						if ( !checkBounds(rndPoint[0],rndPoint[1]) ) continue findLoop;
+						if ( foods.length == 0 ) {
+							foods.push(rndPoint);
+						}
+						for ( var keys in foods ) {
+							var food = foods[keys], dist = parseInt(pointDistance(rndPoint[0],rndPoint[1],food[0],food[1]));
+							if ( dist < minDistance ) {
+								retryTime ++;
+								continue findLoop;
+							}
+						}
+						retryTime = 0;
+						foods.push(rndPoint);
+					}
+				}
+			}
+
+			function genOneFood(){
+				var radius = 20,
+					minDistance = 5,
+					rndPoint = [],
+					point = [],
+					retryLimit = 5,
+					retryTime = 0;
+
+				point = points[parseInt(getRandomArbitrary(0, points.length))];
+				// Generate food!
+				findLoop:
+				while ( true ) {
+					if ( retryTime >= retryLimit ) {
+						retryTime = 0;
+						break;
+					}
+					rndPoint = randomCirclePoint(point[0], point[1], radius);
+					if ( !checkBounds(rndPoint[0],rndPoint[1]) ) continue findLoop;
+					if ( foods.length == 0 ) {
+						foods.push(rndPoint);
+					}
+					for ( var key in foods ) {
+						var food = foods[key], dist = parseInt(pointDistance(rndPoint[0],rndPoint[1],food[0],food[1]));
+						if ( dist < minDistance ) {
+							retryTime ++;
+							continue findLoop;
+						}
+					}
+					retryTime = 0;
+					foods.push(rndPoint);
+					break;
+				}
+			}
+
+			function genCell(){
+				var minDistance = 50,
+					rndX = 0, rndY = 0,
+					retryLimit = 5,
+					retryTime = 0;
+				mainLoop:
+				while ( true ) {
+					if ( retryTime >= retryLimit ) {
+						retryTime = 0;
+						break;
+					}
+					rndX = parseInt(getRandomArbitrary(0, terrainCanvas.width));
+					rndY = parseInt(getRandomArbitrary(0, terrainCanvas.height));
+					if ( !checkBounds(rndX,rndY) ) continue mainLoop;
+					if ( cells.length == 0 ) {
+						cells.push({
+							x : rndX,
+							y : rndY,
+							hp : 10,
+							target : {
+								x : 0,
+								y : 0
+							}
+						});
+					}
+					for ( var keys in cells ) {
+						var cell = cells[keys], dist = parseInt(pointDistance(rndX,rndY,cell.x,cell.y));
+						if ( dist < minDistance ) {
+							retryTime ++;
+							continue mainLoop;
+						}
+					}
+					retryTime = 0;
+					cells.push({
+						x : rndX,
+						y : rndY,
+						hp : 10,
+						target : {
+							type : 0, // 0: none, 1: food, 2: cell
+							x : 0,
+							y : 0
+						}
+					});
+				}
+			}
+
+			function refreshTerrain() {
+				terrainContext.clearRect(0,0,terrainCanvas.width,terrainCanvas.height);
+				cellContext.clearRect(0,0,cellCanvas.width,cellCanvas.height);
+				for ( var key in foods ) {
+					drawTerrain(foods[key][0],foods[key][1],pointColor["Food"]);
+				}
+				for ( var keys in points ) {
+					drawTerrain(points[keys][0],points[keys][1],pointColor["Spawn"]);
+				}
+				for ( var cell in cells ) {
+					drawCell(cells[cell].x,cells[cell].y,cellColor(cells[cell].hp));
+				}
+			}
+
+			function cellColor(hp) {
+				var color = [255,255,255,255];
+				color[0] = parseInt(hp * 25.5);
+				color[1] = parseInt(hp * 25.5);
+				color[2] = parseInt(hp * 25.5);
+				color[3] = parseInt(hp * 25.5);
+				return color;
+			}
+
+			function checkBounds(x,y) {
+				return ( x >= 0 && x <= bounds[0] ) && ( y >= 0 && y <= bounds[1] );
+			}
+
+			//Cell eat food, cell add 1 HP, and born new cell nearby.
+			//Cell no food to eat, it will eat cell, no cell born.
+			function cellAction(){
+				for ( var i = 0; i < cells.length; i++ ) {
+					var cell = cells[i];
+					cell.hp --
+					if ( cell.hp <= 0 ) {
+						cells.splice(i,1);
+						drawCell(cell.x, cell.y, pointColor["None"]);
+					}
+
+					switch (cell.target.type) {
+						case 1:
+							if ( !cellFoodAvailable([cell.target.x, cell.target.y]) ) {
+								cellFindTarget(cell);
+							}
+						case 2:
+						default:
+							cellFindTarget(cell);
+					}
+
+					if ( cell.target.type != 0 ) {
+						var tempX, tempY
+						if ( cell.x < cell.target.x ) {
+							tempX = cell.x + 1
+						} else {
+							tempX = cell.x - 1
+						}
+
+						if ( cell.y < cell.target.y ) {
+							tempY = cell.y + 1
+						} else {
+							tempY = cell.y - 1
+						}
+
+						if ( !checkBounds(tempX, tempY) ) continue;
+
+						cell.x = tempX;
+						cell.y = tempY;
+
+						if ( parseInt(pointDistance(cell.x,cell.y,cell.target.x,cell.target.y)) <= 1 ) {
+							switch (cell.target.type) {
+								case 1:
+									var food = foods.splice(cell.target.key,1);
+									if ( cell.hp <= 100 )
+										cell.hp = cell.hp + 10
+									if ( cell.hp >= 100 )
+										cell.hp = 100
+									cellFindTarget(cell);
+									break;
+								case 2:
+								case 0:
+								default:
+							}
+						}
+					}
+				}
+			}
+
+			function cellFoodAvailable( targetFood ) {
+				for ( var key in foods ) {
+					var food = foods[key];
+					if ( food[0] == targetFood[0] && food[1] == targetFood[1] ) return true;
+				}
+				return false;
+			}
+
+			function cellFindTarget(cell) {
+				var food = cellFindFood(cell);
+				if ( !food[0] ) {
+					cellFindCell();
+				} else {
+					cell.target.type = 1;
+					cell.target.key = food[1];
+					cell.target.x = food[0][0];
+					cell.target.y = food[0][1];
+				}
+			}
+
+			function cellFindFood(cell) {
+				var lastFood;
+				var lastDistance;
+				var lastKey;
+				// Search foods.
+				for ( var i = 0; i < foods.length; i++ ) {
+					var food = foods[i];
+					var distance = parseInt(pointDistance(cell.x,cell.y,food[0],food[1]));
+					if ( !lastDistance ) {
+						lastFood = food;
+						lastDistance = distance;
+						lastKey = i;
+					}
+					if ( lastDistance > distance ) {
+						lastFood = food;
+						lastDistance = distance;
+						lastKey = i;
+					}
+				}
+				return [lastFood, lastKey];
+			}
+
+			function cellFindCell() {
+
+			}
+
+			function drawTerrain(x,y,rgba) {
+				var imgData = terrainContext.createImageData(1, 1)
+				for (var i=0;i<imgData.data.length;i+=4) {
+					imgData.data[i+0]=rgba[0];
+					imgData.data[i+1]=rgba[1];
+					imgData.data[i+2]=rgba[2];
+					imgData.data[i+3]=rgba[3];
+				}
+				terrainContext.putImageData(imgData, x, y);
+			}
+
+			function drawCell(x,y,rgba) {
+				var imgData = cellContext.createImageData(1, 1)
+				for (var i=0;i<imgData.data.length;i+=4) {
+					imgData.data[i+0]=rgba[0];
+					imgData.data[i+1]=rgba[1];
+					imgData.data[i+2]=rgba[2];
+					imgData.data[i+3]=rgba[3];
+				}
+				cellContext.putImageData(imgData, x, y);
+			}
+
+			function randomCirclePoint(x0,y0,radius){
+				var u = Math.random();
+				var v = Math.random();
+				var theta = 2 * Math.PI * u;
+				var phi = Math.acos(2 * v - 1);
+				var x = x0 + (radius * Math.sin(phi) * Math.cos(theta));
+				var y = y0 + (radius * Math.sin(phi) * Math.sin(theta));
+				return [parseInt(x),parseInt(y)];
+			}
+
+			function pointDistance(x1,y1,x2,y2) {
+				return Math.sqrt(Math.pow(x2-x1,2) + Math.pow(y2-y1,2))
+			}
+
+			function getRandomArbitrary(min, max) {
+				return Math.random() * (max - min) + min;
+			}
+
+			genSpawnPoints();
+			//genFood();
+			setInterval(refreshTerrain, 1);
+			setInterval(genOneFood, 1);
+			setInterval(genCell, 100);
+			setInterval(cellAction, 100);
+			genCell();
+		</script>
+	</body>
+</html>
